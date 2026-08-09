@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  COD
+  MANUAL_TRANSFER
+  ORANGE_MONEY
+}
+
+/// Tracks the 20% upfront deposit, independent of the order's fulfillment
+/// status. COD and ORANGE_MONEY both require a deposit before an order is
+/// confirmed; MANUAL_TRANSFER keeps the existing full-payment-by-transfer flow.
+enum PaymentStatus {
+  PENDING
+  DEPOSIT_PAID
+  FULLY_PAID
+  FAILED
+}
+
+/// The 12 Jordanian governorates. Shipping is strictly limited to these —
+/// no free-text city input is allowed anywhere in the system.
+enum Governorate {
+  AMMAN
+  ZARQA
+  IRBID
+  AQABA
+  BALQA
+  MADABA
+  MAFRAQ
+  JERASH
+  AJLOUN
+  KARAK
+  TAFILEH
+  MAAN
+}
+
+model Product {
+  id            Int       @id @default(autoincrement())
+  slug          String    @unique @db.VarChar(180)
+  nameAr        String    @map("name_ar") @db.VarChar(200)
+  nameEn        String?   @map("name_en") @db.VarChar(200)
+  descriptionAr String?   @map("description_ar")
+  category      String    @db.VarChar(60)
+  basePrice     Decimal   @map("base_price") @db.Decimal(10, 2)
+  // Optional sale price. When set (and lower than basePrice) the storefront
+  // shows it as the active price with the original struck through.
+  discountPrice Decimal?  @map("discount_price") @db.Decimal(10, 2)
+  isActive      Boolean   @default(true) @map("is_active")
+  isFeatured    Boolean   @default(false) @map("is_featured")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  images   ProductImage[]
+  variants ProductVariant[]
+  reviews       Review[]
+  wishlistItems WishlistItem[]
+
+  @@index([category])
+  @@index([isActive])
+  @@index([category, isActive])
+  @@index([isFeatured])
+  @@index([createdAt])
+  @@map("products")
+}
+
+model ProductImage {
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
+  imageUrl  String  @map("image_url") @db.VarChar(500)
+  altText   String? @map("alt_text") @db.VarChar(200)
+  sortOrder Int     @default(0) @map("sort_order")
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model ProductVariant {
+  id            Int      @id @default(autoincrement())
+  productId     Int      @map("product_id")
+  size          String   @db.VarChar(20)
+  colorName     String   @map("color_name") @db.VarChar(50)
+  colorHex      String?  @map("color_hex") @db.VarChar(7)
+  sku           String   @unique @db.VarChar(60)
+  stockQuantity Int      @default(0) @map("stock_quantity")
+  priceOverride Decimal? @map("price_override") @db.Decimal(10, 2)
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@unique([productId, size, colorName])
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model ShippingZone {
+  id            Int         @id @default(autoincrement())
+  governorate   Governorate @unique
+  shippingFee   Decimal     @map("shipping_fee") @db.Decimal(6, 2)
+  estimatedDays Int         @default(2) @map("estimated_days")
+
+  orders Order[]
+
+  @@map("shipping_zones")
+}
+
+model Order {
+  id            Int    @id @default(autoincrement())
+  /// Human-readable, dual-purpose order & tracking code — format: SHRQ-YYYYMM-XXXX
+  /// (e.g. SHRQ-202607-0001). Sequence resets every calendar month.
+  orderCode     String @unique @map("order_code") @db.VarChar(24)
+  firstName     String @map("first_name") @db.VarChar(60)
+  lastName      String @map("last_name") @db.VarChar(60)
+  customerPhone String @map("customer_phone") @db.VarChar(15)
+
+  governorate    Governorate
+  /// Area / neighborhood (e.g. "الجبيهة")
+  area           String  @db.VarChar(120)
+  /// Street name
+  street         String  @db.VarChar(160)
+  /// Building & apartment / floor number
+  buildingNumber String  @map("building_number") @db.VarChar(60)
+  /// Nearby landmark to help the courier — optional but recommended
+  landmark       String? @db.VarChar(200)
+
+  subtotal      Decimal       @db.Decimal(10, 2)
+  shippingFee   Decimal       @map("shipping_fee") @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  status        OrderStatus   @default(PENDING)
+  paymentMethod PaymentMethod @default(COD) @map("payment_method")
+  notes         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // ---- Orange Money deposit (COD + ORANGE_MONEY both require this) ----
+  paymentStatus            PaymentStatus @default(PENDING) @map("payment_status")
+  /// 20% of `total`, computed at order creation time
+  depositAmount             Decimal?  @map("deposit_amount") @db.Decimal(10, 2)
+  /// Orange Money transaction reference the customer typed in at checkout
+  depositTransactionRef     String?   @map("deposit_transaction_ref") @db.VarChar(100)
+  /// Orange Money phone number the deposit was sent from
+  depositPhoneNumber        String?   @map("deposit_phone_number") @db.VarChar(15)
+  depositVerifiedAt         DateTime? @map("deposit_verified_at")
+  depositVerifiedByAdminId  Int?      @map("deposit_verified_by_admin_id")
+
+  shippingZone ShippingZone @relation(fields: [governorate], references: [governorate])
+  items        OrderItem[]
+  reviews      Review[]
+
+  @@index([status])
+  @@index([customerPhone])
+  @@index([governorate])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([paymentStatus])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          Int     @id @default(autoincrement())
+  orderId     Int     @map("order_id")
+  variantId   Int     @map("variant_id")
+  productName String  @map("product_name") @db.VarChar(200)
+  size        String  @db.VarChar(20)
+  colorName   String  @map("color_name") @db.VarChar(50)
+  quantity    Int
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  lineTotal   Decimal @map("line_total") @db.Decimal(10, 2)
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model AdminUser {
+  id                  Int       @id @default(autoincrement())
+  username            String    @unique @db.VarChar(60)
+  passwordHash        String    @map("password_hash") @db.VarChar(255)
+  role                String    @default("admin") @db.VarChar(20)
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  lastLoginAt         DateTime? @map("last_login_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  refreshTokens RefreshToken[]
+  auditLogs     AdminAuditLog[]
+
+  @@map("admin_users")
+}
+
+/// Refresh tokens are stored as SHA-256 hashes only (never the raw token) so a
+/// database leak alone can't be used to mint sessions. Rotation-on-use: every
+/// /refresh call revokes the presented token and issues a brand new one.
+model RefreshToken {
+  id            Int       @id @default(autoincrement())
+  tokenHash     String    @unique @map("token_hash") @db.VarChar(64)
+  adminId       Int       @map("admin_id")
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  replacedByHash String?  @map("replaced_by_hash") @db.VarChar(64)
+  ipAddress     String?   @map("ip_address") @db.VarChar(45)
+  userAgent     String?   @map("user_agent") @db.VarChar(255)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Immutable trail of every admin write action, for accountability & incident
+/// forensics. Never updated or deleted by the app itself.
+model AdminAuditLog {
+  id         Int      @id @default(autoincrement())
+  adminId    Int?     @map("admin_id")
+  action     String   @db.VarChar(60)
+  entityType String   @map("entity_type") @db.VarChar(60)
+  entityId   String?  @map("entity_id") @db.VarChar(60)
+  meta       Json?
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  admin AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
+}
+
+/// عداد متسلسل آمن لتوليد رمز التتبع مثل SHRQ-202607-0001 دون تعارض بين
+/// الطلبات المتزامنة. المفتاح هو "YYYYMM" بحيث يُعاد ترقيم التسلسل كل شهر.
+model OrderCounter {
+  yearMonth  String @id @map("year_month") @db.VarChar(6)
+  lastNumber Int    @default(0)
+
+  @@map("order_counters")
+}
+
+/// A product review left by a customer who actually purchased that product.
+/// Eligibility is verified against a real Order (orderCode + phone number)
+/// since the storefront has no customer accounts — there's no userId to
+/// check against, so the purchase itself is the identity proof.
+model Review {
+  id            Int      @id @default(autoincrement())
+  productId     Int      @map("product_id")
+  orderId       Int      @map("order_id")
+  customerName  String   @map("customer_name") @db.VarChar(120)
+  customerPhone String   @map("customer_phone") @db.VarChar(15)
+  rating        Int      @db.SmallInt
+  comment       String?  @db.VarChar(1000)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // One review per product per order — stops a customer from spamming
+  // reviews for the same purchase.
+  @@unique([orderId, productId])
+  @@index([productId])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+/// Wishlist items, scoped to an anonymous per-browser `deviceId` (a random
+/// UUID generated client-side and stored in localStorage) rather than a
+/// userId — the storefront is guest-checkout only with no accounts.
+model WishlistItem {
+  id        Int      @id @default(autoincrement())
+  deviceId  String   @map("device_id") @db.VarChar(64)
+  productId Int      @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, productId])
+  @@index([deviceId])
+  @@map("wishlist_items")
+}
