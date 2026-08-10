@@ -81,13 +81,13 @@ async function verifyAndPersistImage(req: Request, res: Response, next: NextFunc
       // redeploy — this path uploads to S3 (or any S3-compatible bucket)
       // instead and exposes the resulting public URL via req.fileUrl.
       req.fileUrl = await uploadBufferToS3(reencodedBuffer, `products/${filename}`, 'image/jpeg');
-      req.file.filename = filename;
+      file.filename = filename;
     } else {
       // Default, unchanged behaviour: write to local disk.
       const destPath = path.join(uploadRoot, filename);
       await fs.promises.writeFile(destPath, reencodedBuffer);
-      req.file.filename = filename;
-      req.file.path = destPath;
+      file.filename = filename;
+      file.path = destPath;
     }
 
     next();
