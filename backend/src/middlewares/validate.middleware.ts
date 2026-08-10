@@ -1,16 +1,12 @@
 import { NextFunction, Request, Response } from 'express';
-import { AnyZodObject } from 'zod';
+import { ZodTypeAny } from 'zod';
 
 interface ValidationSchemas {
-  body?: AnyZodObject;
-  query?: AnyZodObject;
-  params?: AnyZodObject;
+  body?: ZodTypeAny;
+  query?: ZodTypeAny;
+  params?: ZodTypeAny;
 }
 
-/**
- * Validates and (re)assigns req.body/query/params from parsed Zod schemas.
- * Throws ZodError on failure, caught by the centralized error middleware.
- */
 export const validate = (schemas: ValidationSchemas) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (schemas.body) {

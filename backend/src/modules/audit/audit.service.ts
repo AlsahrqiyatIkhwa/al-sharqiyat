@@ -14,7 +14,8 @@ export type AuditAction =
   | 'PRODUCT_DELETE'
   | 'PRODUCT_IMAGE_UPLOAD'
   | 'PRODUCT_IMAGE_DELETE'
-  | 'ORDER_STATUS_UPDATE';
+  | 'ORDER_STATUS_UPDATE'
+  | 'ORDER_DEPOSIT_VERIFIED';
 
 interface AuditLogInput {
   adminId?: number | null;
