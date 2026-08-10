@@ -37,8 +37,11 @@ export const metadata: Metadata = {
     'أزياء تراثية',
     'الأردن',
   ],
-  alternates: {
+alternates: {
     canonical: '/',
+  },
+  verification: {
+    google: '_3NSAicn2L8aoyCEazDm-gcjeihCJn8AV3_lL6l6C2Y',
   },
   openGraph: {
     type: 'website',
