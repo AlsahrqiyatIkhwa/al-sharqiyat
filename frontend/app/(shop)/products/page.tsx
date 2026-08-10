@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import { Product } from '@/types';
+import { Suspense } from 'react';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { Filters } from '@/components/shop/Filters';
 
@@ -46,7 +47,9 @@ export default async function ProductsPage({ searchParams }: PageProps) {
         <p className="mt-1 text-sm text-ink-900/50">{total} منتج</p>
       </div>
 
-      <Filters categories={categories} />
+      <Suspense fallback={null}>
+        <Filters categories={categories} />
+      </Suspense>
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-ink-900/15 py-24 text-center">
