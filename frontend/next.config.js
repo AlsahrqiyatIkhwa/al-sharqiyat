@@ -46,6 +46,14 @@ const nextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'https://al-sharqiyat-backend.onrender.com/api/:path*',
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;
