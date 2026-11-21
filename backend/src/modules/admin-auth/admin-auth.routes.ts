@@ -186,7 +186,7 @@ router.post(
     if (!admin) throw ApiError.unauthorized('المستخدم غير موجود');
 
     // Rotate: revoke the presented token, issue a brand new pair.
-    const newRefreshToken = signRefreshToken(payload);
+    const newRefreshToken = signRefreshToken({ adminId: admin.id, username: admin.username, role: admin.role });
     await prisma.$transaction([
       prisma.refreshToken.update({
         where: { tokenHash },
